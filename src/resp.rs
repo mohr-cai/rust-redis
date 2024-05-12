@@ -16,7 +16,7 @@ impl Value {
     pub fn serialise(self) -> String {
         match self {
             Value::SimpleString(s) => format!("+{}\r\n", s),
-            Value::BulkString(s) => format!("${}\r\n{}\r\n", s.chars().count(), s),
+            Value::BulkString(s) => format!("${}\r\n{}\r\n", s.as_bytes().len(), s),
             _ => panic!("Not implemented for serialize"),
         }
     }
