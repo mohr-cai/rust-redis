@@ -1,35 +1,41 @@
-[![progress-banner](https://backend.codecrafters.io/progress/redis/f9529e5d-e004-4d33-821a-c50812cf2852)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Rust Redis-like Server
 
-This is a starting point for Rust solutions to the
-["Build Your Own Redis" Challenge](https://codecrafters.io/challenges/redis).
+This project is a simplified Redis-like server implemented in Rust. It supports basic key-value storage functionalities with optional key expiration and is capable of handling multiple client connections concurrently. This server is built to handle a subset of Redis commands and uses the Redis serialization protocol (RESP) for communication.
 
-In this challenge, you'll build a toy Redis clone that's capable of handling
-basic commands like `PING`, `SET` and `GET`. Along the way we'll learn about
-event loops, the Redis protocol and more.
+## Features
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- **Basic Redis Commands**: Supports `PING`, `ECHO`, `SET`, and `GET` commands.
+- **Concurrency**: Uses multithreading to handle multiple client connections simultaneously.
+- **Key Expiration**: Allows setting expiration time for keys in milliseconds.
+- **Error Handling**: Gracefully handles errors and client disconnections.
 
-# Passing the first stage
+## Getting Started
 
-The entry point for your Redis implementation is in `src/main.rs`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
+### Running the Server
 
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
+Run the server using Cargo:
+
+    cargo run --release
+
+The server will start and listen for connections on `127.0.0.1:6379`.
+
+## Usage
+
+Connect to the server using a Redis client or any compatible tool. Below are examples using `redis-cli`:
+```
+    redis-cli -p 6379
+    127.0.0.1:6379> PING
+    PONG
+    127.0.0.1:6379> SET mykey myvalue
+    OK
+    127.0.0.1:6379> GET mykey
+    "myvalue"
+    127.0.0.1:6379> SET tempkey tempvalue PX 10000
+    OK
+    127.0.0.1:6379> ECHO "Hello, World!"
+    "Hello, World!"
 ```
 
-That's all!
+## Future Work
 
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `cargo (1.54)` installed locally
-1. Run `./spawn_redis_server.sh` to run your Redis server, which is implemented
-   in `src/main.rs`. This command compiles your Rust project, so it might be
-   slow the first time you run it. Subsequent runs will be fast.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal
+- **Replication**: leader follower (master-replica) replication
