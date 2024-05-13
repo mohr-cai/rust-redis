@@ -4,6 +4,7 @@ use std::{
     io::{BufReader, ErrorKind, Write},
     net::{TcpListener, TcpStream},
     thread,
+    time::{Duration, SystemTime},
 };
 
 mod db;
@@ -89,12 +90,36 @@ fn handle_set(args: Vec<Value>, store: &Store) -> Value {
     if args.len() < 2 {
         return Value::Error("wrong number of arguments for 'set' command".to_string());
     }
-    let key = unpack_bulk_string(&args[0]).unwrap();
-    let value = unpack_bulk_string(&args[1]).unwrap();
-    store.write(key, value).unwrap();
+    let mut iter = args.into_iter();
+    let key = unpack_bulk_string(&iter.next().unwrap()).unwrap();
+    let value = unpack_bulk_string(&iter.next().unwrap()).unwrap();
+    let mut expiry: Option<SystemTime> = None;
+
+    if let Some(v) = iter.next() {
+        match v {
+            Value::Bulk(option) => match option.to_lowercase().as_str() {
+                "px" => {
+                    let ms = match iter.next() {
+                        Some(Value::Bulk(arg)) => arg.parse::<u64>().unwrap(),
+                        _ => {
+                            return Value::Error("argument is not a bulk string".to_string());
+                        }
+                    };
+                    expiry = Some(SystemTime::now() + Duration::from_millis(ms));
+                }
+                _ => {
+                    return Value::Error("option not supported".to_string());
+                }
+            },
+            _ => {
+                return Value::Error("option is not a bulk string".to_string());
+            }
+        }
+    }
+
+    store.write(key, value, expiry).unwrap();
     Value::String("OK".to_string())
 }
-
 fn handle_get(args: Vec<Value>, store: &Store) -> Value {
     if args.len() < 1 {
         return Value::Error("wrong number of arguments for 'get' command".to_string());
@@ -102,6 +127,9 @@ fn handle_get(args: Vec<Value>, store: &Store) -> Value {
     let key = unpack_bulk_string(&args[0]).unwrap();
     match store.read(&key) {
         Ok(value) => Value::Bulk(value),
-        Err(_) => Value::Null,
+        Err(e) => {
+            println!("error: {}", e);
+            Value::Null
+        }
     }
 }
