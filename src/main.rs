@@ -1,61 +1,107 @@
 use anyhow::Result;
-use resp::Value;
-use tokio::net::{TcpListener, TcpStream};
+use resp::{Decoder, Value};
+use std::{
+    io::{BufReader, ErrorKind, Write},
+    net::{TcpListener, TcpStream},
+    thread,
+};
 
-mod resp;
-#[tokio::main]
-async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
+mod db;
+use db::Store;
 
-    loop {
-        let stream = listener.accept().await;
+static PORT: u16 = 6379;
 
+fn main() {
+    let listener = TcpListener::bind(format!("127.0.0.1:{PORT}")).unwrap();
+    let store = Store::new();
+
+    for stream in listener.incoming() {
+        let store_clone = store.clone();
         match stream {
-            Ok((stream, _)) => {
-                tokio::spawn(async move { handle_conn(stream).await });
+            Ok(stream) => {
+                println!("accepted new connection");
+                thread::spawn(move || {
+                    handle_client(stream, store_clone);
+                });
             }
             Err(e) => {
-                println!("Error: {}", e);
+                println!("error: {}", e);
             }
         }
     }
 }
 
-async fn handle_conn(stream: TcpStream) {
-    let mut handler = resp::RespHandler::new(stream);
-    println!("Starting read loop");
+fn handle_client(mut stream: TcpStream, store: Store) {
     loop {
-        let value = handler.read_value().await.unwrap();
-        println!("Got value {:?}", value);
+        let bufreader = BufReader::new(&stream);
+        let mut decoder = Decoder::new(bufreader);
 
-        let response = if let Some(v) = value {
-            let (command, args) = extract_command(v).unwrap();
-            match command.as_str() {
-                "PING" => Value::SimpleString("PONG".to_string()),
-                "ECHO" => args.first().unwrap().clone(),
-                c => panic!("Cannot handle command {}", c),
+        let result = match decoder.decode() {
+            Ok(value) => {
+                let (command, args) = extract_command(&value).unwrap();
+                match command.to_lowercase().as_str() {
+                    "ping" => Ok(Value::String("PONG".to_string())),
+                    "echo" => Ok(args.first().unwrap().clone()),
+                    "set" => Ok(handle_set(args, &store)),
+                    "get" => Ok(handle_get(args, &store)),
+                    c => Err(anyhow::anyhow!("Unknown command: {}", c)),
+                }
             }
-        } else {
-            break;
+            Err(e) => {
+                if e.kind() == ErrorKind::UnexpectedEof {
+                    println!("client disconnected");
+                    return;
+                }
+                Err(e.into())
+            }
         };
-        println!("Sending value {:?}", response);
-        handler.write_value(response).await.unwrap();
+
+        match result {
+            Ok(value) => {
+                stream.write_all(&value.encode()).unwrap();
+            }
+            Err(e) => {
+                println!("error: {}", e);
+            }
+        }
     }
 }
 
-fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
+fn extract_command(value: &Value) -> Result<(String, Vec<Value>)> {
     match value {
-        Value::Array(a) => Ok((
-            unpack_bulk_str(a.first().unwrap().clone())?,
-            a.into_iter().skip(1).collect(),
-        )),
+        Value::Array(a) => {
+            let command = unpack_bulk_string(a.first().unwrap())?;
+            let args = a.iter().skip(1).cloned().collect();
+            Ok((command, args))
+        }
         _ => Err(anyhow::anyhow!("Unexpected command format")),
     }
 }
 
-fn unpack_bulk_str(value: Value) -> Result<String> {
+fn unpack_bulk_string(value: &Value) -> Result<String> {
     match value {
-        Value::BulkString(string) => Ok(string),
-        _ => Err(anyhow::anyhow!("Expected command to be a bulk string")),
+        Value::Bulk(s) => Ok(s.to_string()),
+        _ => Err(anyhow::anyhow!("Expected command to be bulk string")),
+    }
+}
+
+fn handle_set(args: Vec<Value>, store: &Store) -> Value {
+    if args.len() < 2 {
+        return Value::Error("wrong number of arguments for 'set' command".to_string());
+    }
+    let key = unpack_bulk_string(&args[0]).unwrap();
+    let value = unpack_bulk_string(&args[1]).unwrap();
+    store.write(key, value).unwrap();
+    Value::String("OK".to_string())
+}
+
+fn handle_get(args: Vec<Value>, store: &Store) -> Value {
+    if args.len() < 1 {
+        return Value::Error("wrong number of arguments for 'get' command".to_string());
+    }
+    let key = unpack_bulk_string(&args[0]).unwrap();
+    match store.read(&key) {
+        Ok(value) => Value::Bulk(value),
+        Err(_) => Value::Null,
     }
 }
