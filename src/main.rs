@@ -1,6 +1,7 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use resp::{Decoder, Value};
 use std::{
+    env,
     io::{BufReader, ErrorKind, Write},
     net::{TcpListener, TcpStream},
     thread,
@@ -10,10 +11,26 @@ use std::{
 mod db;
 use db::Store;
 
-static PORT: u16 = 6379;
-
+fn parse_port() -> Result<Option<u16>> {
+    let args = env::args().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--port" {
+            if i == args.len() - 1 {
+                bail!("--port without number");
+            }
+            match args[i + 1].parse::<u16>() {
+                Ok(port) => return Ok(Some(port)),
+                Err(err) => bail!(err),
+            }
+        }
+        i += 1;
+    }
+    Ok(None)
+}
 fn main() {
-    let listener = TcpListener::bind(format!("127.0.0.1:{PORT}")).unwrap();
+    let port = parse_port().unwrap().unwrap_or(6379);
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
     let store = Store::new();
 
     for stream in listener.incoming() {
