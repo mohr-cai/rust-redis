@@ -18,28 +18,41 @@ static PORT: u16 = 6379;
 struct Args {
     #[arg(short, long, default_value_t = PORT)]
     port: u16,
-    #[arg(short, long, num_args = 2)]
+    #[arg(short, long, num_args = 1)]
     replicaof: Option<Vec<String>>,
 }
 
 fn main() {
     let cmd_args = Args::parse();
     let port = cmd_args.port;
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("Failed to bind to port");
+
+    println!("Server listening on port {}", port);
+
     let store = Store::new();
 
+    if let Some(replica_addrs) = &cmd_args.replicaof {
+        for addr in replica_addrs {
+            println!("Connecting to replica at {}", addr);
+            match TcpStream::connect(addr) {
+                Ok(_) => println!("Connected to replica at {}", addr),
+                Err(e) => println!("Failed to connect to replica at {}: {}", addr, e),
+            }
+        }
+    }
+
     for stream in listener.incoming() {
-        let store_clone = store.clone();
-        let cmd_args_clone = cmd_args.clone();
         match stream {
             Ok(stream) => {
-                println!("accepted new connection");
+                println!("Accepted new connection");
+                let store_clone = store.clone();
+                let cmd_args_clone = cmd_args.clone();
                 thread::spawn(move || {
                     handle_client(stream, store_clone, cmd_args_clone);
                 });
             }
             Err(e) => {
-                println!("error: {e}");
+                println!("Error accepting connection: {e}");
             }
         }
     }
