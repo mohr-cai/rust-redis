@@ -48,6 +48,9 @@ fn main() {
         }
     }
 }
+fn handle_info() -> Value {
+    Value::Bulk("role:master".to_string())
+}
 
 fn handle_client(mut stream: TcpStream, store: Store) {
     loop {
@@ -62,6 +65,7 @@ fn handle_client(mut stream: TcpStream, store: Store) {
                     "echo" => Ok(args.first().unwrap().clone()),
                     "set" => Ok(handle_set(args, &store)),
                     "get" => Ok(handle_get(args, &store)),
+                    "info" => Ok(handle_info()),
                     c => Err(anyhow::anyhow!("Unknown command: {}", c)),
                 }
             }
